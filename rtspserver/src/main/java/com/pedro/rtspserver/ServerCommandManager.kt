@@ -2,9 +2,12 @@ package com.pedro.rtspserver
 
 import android.util.Base64
 import android.util.Log
-import com.pedro.rtsp.rtsp.Body
-import com.pedro.rtsp.rtsp.CommandsManager
 import com.pedro.rtsp.rtsp.Protocol
+import com.pedro.rtsp.rtsp.commands.Command
+import com.pedro.rtsp.rtsp.commands.CommandsManager
+import com.pedro.rtsp.rtsp.commands.Method
+import com.pedro.rtsp.rtsp.commands.SdpBody
+import com.pedro.rtsp.utils.RtpConstants
 import java.io.BufferedReader
 import java.io.IOException
 import java.net.SocketException
@@ -15,19 +18,34 @@ import java.util.regex.Pattern
  * Created by pedro on 23/10/19.
  *
  */
-class ServerCommandManager(private val serverIp: String, private val serverPort: Int,
-                           val clientIp: String?) : CommandsManager() {
+open class ServerCommandManager(private val serverIp: String, private val serverPort: Int,
+                           val clientIp: String) : CommandsManager() {
 
   private val TAG = "ServerCommandManager"
   var audioPorts = ArrayList<Int>()
   var videoPorts = ArrayList<Int>()
   private var track: Int? = null
 
-  fun createResponse(action: String, request: String, cSeq: Int): String {
-    return when {
-      action.contains("options", true) -> createOptions(cSeq)
-      action.contains("describe", true) -> createDescribe(cSeq)
-      action.contains("setup", true) -> {
+  fun createResponse(method: Method, request: String, cSeq: Int): String {
+    return when (method){
+      Method.OPTIONS -> createOptions(cSeq)
+      Method.DESCRIBE -> {
+        if (needAuth()) {
+          val auth = getAuth(request)
+          val data = "$user:$password"
+          val base64Data = Base64.encodeToString(data.toByteArray(), Base64.DEFAULT)
+          if (base64Data.trim() == auth.trim()) {
+            Log.i(TAG, "basic auth success")
+            createDescribe(cSeq) // auth accepted
+          } else {
+            Log.e(TAG, "basic auth error")
+            createError(401, cSeq)
+          }
+        } else {
+          createDescribe(cSeq)
+        }
+      }
+      Method.SETUP -> {
         protocol = getProtocol(request)
         return when (protocol) {
           Protocol.TCP -> {
@@ -42,14 +60,28 @@ class ServerCommandManager(private val serverIp: String, private val serverPort:
           }
         }
       }
-      action.contains("play", true) -> createPlay(cSeq)
-      action.contains("pause", true) -> createPause(cSeq)
-      action.contains("teardown", true) -> createTeardown(cSeq)
+      Method.PLAY -> createPlay(cSeq)
+      Method.PAUSE -> createPause(cSeq)
+      Method.TEARDOWN -> createTeardown(cSeq)
       else -> createError(400, cSeq)
     }
   }
 
-  private fun getProtocol(request: String): Protocol? {
+  private fun needAuth(): Boolean {
+    return !user.isNullOrEmpty() && !password.isNullOrEmpty()
+  }
+
+  private fun getAuth(request: String): String {
+    val rtspPattern = Pattern.compile("Authorization: Basic ([\\w+/=]+)")
+    val matcher = rtspPattern.matcher(request)
+    return if (matcher.find()) {
+      matcher.group(1) ?: ""
+    } else {
+      ""
+    }
+  }
+
+  private fun getProtocol(request: String): Protocol {
     return if (request.contains("UDP", true) || loadPorts(request)) {
       Protocol.UDP
     } else {
@@ -70,26 +102,26 @@ class ServerCommandManager(private val serverIp: String, private val serverPort:
     }
     getTrack(request)
     if (track != null) {
-      if (track == 0) { //audio ports
+      if (track == RtpConstants.trackAudio) { //audio ports
         audioPorts.clear()
         audioPorts.add(ports[0])
         audioPorts.add(ports[1])
+        Log.i(TAG, "Audio ports: $audioPorts")
       } else { //video ports
         videoPorts.clear()
         videoPorts.add(ports[0])
         videoPorts.add(ports[1])
+        Log.i(TAG, "Video ports: $videoPorts")
       }
     } else {
       Log.e(TAG, "Track id not found")
       return false
     }
-    Log.i(TAG, "Video ports: $videoPorts")
-    Log.i(TAG, "Audio ports: $audioPorts")
     return true
   }
 
   private fun getTrack(request: String) {
-    val trackMatcher = Pattern.compile("trackID=(\\w+)", Pattern.CASE_INSENSITIVE).matcher(request)
+    val trackMatcher = Pattern.compile("streamid=(\\w+)", Pattern.CASE_INSENSITIVE).matcher(request)
     return if (trackMatcher.find()) {
       track = trackMatcher.group(1)?.toInt()
     } else {
@@ -97,27 +129,9 @@ class ServerCommandManager(private val serverIp: String, private val serverPort:
     }
   }
 
-  fun getCSeq(request: String): Int {
-    val cSeqMatcher =
-        Pattern.compile("CSeq\\s*:\\s*(\\d+)", Pattern.CASE_INSENSITIVE).matcher(request)
-    return if (cSeqMatcher.find()) {
-      cSeqMatcher.group(1)?.toInt() ?: -1
-    } else {
-      Log.e(TAG, "cSeq not found")
-      return -1
-    }
-  }
-
   @Throws(IOException::class, IllegalStateException::class, SocketException::class)
-  fun getRequest(
-      input: BufferedReader): String {
-    var request = ""
-    var line: String? = input.readLine()
-    while (line != null && line.length > 3) {
-      request += "$line\n"
-      line = input.readLine()
-    }
-    return request
+  fun getRequest(input: BufferedReader): Command {
+    return super.getResponse(input, Method.UNKNOWN)
   }
 
   private fun createStatus(code: Int): String {
@@ -132,7 +146,10 @@ class ServerCommandManager(private val serverIp: String, private val serverPort:
   }
 
   fun createError(code: Int, cSeq: Int): String {
-    return "RTSP/1.0 ${createStatus(code)}\r\nServer: pedroSG94 Server\r\nCseq: $cSeq\r\n\r\n"
+    val auth = if (code == 401) {
+      "WWW-Authenticate: Basic realm=\"pedroSG94\"\r\n"
+    } else ""
+    return "RTSP/1.0 ${createStatus(code)}\r\nServer: pedroSG94 Server\r\n${auth}Cseq: $cSeq\r\n\r\n"
   }
 
   private fun createHeader(cSeq: Int): String {
@@ -149,9 +166,16 @@ class ServerCommandManager(private val serverIp: String, private val serverPort:
   }
 
   private fun createBody(): String {
-    val audioBody = Body.createAacBody(trackAudio, sampleRate, isStereo)
-    val videoBody = if (vps == null) Body.createH264Body(trackVideo, encodeToString(sps), encodeToString(pps)) else Body.createH265Body(trackVideo, encodeToString(sps), encodeToString(pps), encodeToString(vps))
-    return "v=0\r\no=- 0 0 IN IP4 $serverIp\r\ns=Unnamed\r\ni=N/A\r\nc=IN IP4 $clientIp\r\nt=0 0\r\na=recvonly\r\n$audioBody$videoBody\r\n"
+    var audioBody = ""
+    if (!audioDisabled) {
+      audioBody = SdpBody.createAacBody(RtpConstants.trackAudio, sampleRate, isStereo)
+    }
+    var videoBody = ""
+    if (!videoDisabled) {
+      videoBody = if (vps == null) SdpBody.createH264Body(RtpConstants.trackVideo, encodeToString(sps!!)!!, encodeToString(pps!!)!!)
+      else SdpBody.createH265Body(RtpConstants.trackVideo, encodeToString(sps!!)!!, encodeToString(pps!!)!!, encodeToString(vps!!)!!)
+    }
+    return "v=0\r\no=- 0 0 IN IP4 $serverIp\r\ns=Unnamed\r\ni=N/A\r\nc=IN IP4 $clientIp\r\nt=0 0\r\na=recvonly\r\n$videoBody$audioBody\r\n"
   }
 
   override fun createSetup(cSeq: Int): String {
@@ -164,7 +188,15 @@ class ServerCommandManager(private val serverIp: String, private val serverPort:
   }
 
   private fun createPlay(cSeq: Int): String {
-    return "${createHeader(cSeq)}Content-Length: 0\r\nRTP-Info: url=rtsp://$serverIp:$serverPort/\r\nSession: 1185d20035702ca\r\n\r\n"
+    var info = ""
+    if (!videoDisabled) {
+      info += "url=rtsp://$serverIp:$serverPort/streamid=${RtpConstants.trackVideo};seq=1;rtptime=0"
+    }
+    if (!audioDisabled) {
+      if (!videoDisabled) info += ","
+      info += "url=rtsp://$serverIp:$serverPort/streamid=${RtpConstants.trackAudio};seq=1;rtptime=0"
+    }
+    return "${createHeader(cSeq)}Content-Length: 0\r\nRTP-Info: $info\r\nSession: 1185d20035702ca\r\n\r\n"
   }
 
   private fun createPause(cSeq: Int): String {

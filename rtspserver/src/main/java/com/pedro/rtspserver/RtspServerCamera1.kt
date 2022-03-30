@@ -17,36 +17,36 @@ import java.nio.ByteBuffer
 /**
  * Created by pedro on 13/02/19.
  */
-class RtspServerCamera1 : Camera1Base {
+open class RtspServerCamera1 : Camera1Base {
 
   private val rtspServer: RtspServer
 
   constructor(surfaceView: SurfaceView, connectCheckerRtsp: ConnectCheckerRtsp, port: Int) : super(
     surfaceView) {
-    rtspServer = RtspServer(surfaceView.context, connectCheckerRtsp, port)
+    rtspServer = RtspServer(connectCheckerRtsp, port)
   }
 
   constructor(textureView: TextureView, connectCheckerRtsp: ConnectCheckerRtsp, port: Int) : super(
     textureView) {
-    rtspServer = RtspServer(textureView.context, connectCheckerRtsp, port)
+    rtspServer = RtspServer(connectCheckerRtsp, port)
   }
 
   @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
   constructor(openGlView: OpenGlView, connectCheckerRtsp: ConnectCheckerRtsp, port: Int) : super(
     openGlView) {
-    rtspServer = RtspServer(openGlView.context, connectCheckerRtsp, port)
+    rtspServer = RtspServer(connectCheckerRtsp, port)
   }
 
   @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
   constructor(lightOpenGlView: LightOpenGlView, connectCheckerRtsp: ConnectCheckerRtsp,
     port: Int) : super(lightOpenGlView) {
-    rtspServer = RtspServer(lightOpenGlView.context, connectCheckerRtsp, port)
+    rtspServer = RtspServer(connectCheckerRtsp, port)
   }
 
   @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
   constructor(context: Context, connectCheckerRtsp: ConnectCheckerRtsp, port: Int) : super(
     context) {
-    rtspServer = RtspServer(context, connectCheckerRtsp, port)
+    rtspServer = RtspServer(connectCheckerRtsp, port)
   }
 
   fun setVideoCodec(videoCodec: VideoCodec) {
@@ -54,13 +54,17 @@ class RtspServerCamera1 : Camera1Base {
       if (videoCodec == VideoCodec.H265) CodecUtil.H265_MIME else CodecUtil.H264_MIME
   }
 
+  fun getNumClients(): Int = rtspServer.getNumClients()
+
   fun getEndPointConnection(): String = "rtsp://${rtspServer.serverIp}:${rtspServer.port}/"
 
-  override fun setAuthorization(user: String, password: String) { //not developed
+  override fun setAuthorization(user: String, password: String) {
+    rtspServer.setAuth(user, password)
   }
 
   fun startStream() {
     super.startStream("")
+    rtspServer.startServer()
   }
 
   override fun prepareAudioRtp(isStereo: Boolean, sampleRate: Int) {
@@ -84,7 +88,6 @@ class RtspServerCamera1 : Camera1Base {
     val newPps = pps.duplicate()
     val newVps = vps?.duplicate()
     rtspServer.setVideoInfo(newSps, newPps, newVps)
-    rtspServer.startServer()
   }
 
   override fun getH264DataRtp(h264Buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
@@ -93,6 +96,9 @@ class RtspServerCamera1 : Camera1Base {
 
   override fun setLogs(enable: Boolean) {
     rtspServer.setLogs(enable)
+  }
+
+  override fun setCheckServerAlive(enable: Boolean) {
   }
 
   /**
@@ -104,10 +110,12 @@ class RtspServerCamera1 : Camera1Base {
 
   override fun shouldRetry(reason: String?): Boolean = false
 
-  override fun reConnect(delay: Long) {
-  }
+  override fun hasCongestion(): Boolean = rtspServer.hasCongestion()
 
   override fun setReTries(reTries: Int) {
+  }
+
+  override fun reConnect(delay: Long, backupUrl: String?) {
   }
 
   override fun getCacheSize(): Int = 0

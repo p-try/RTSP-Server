@@ -1,25 +1,19 @@
 package com.pedro.rtspserver
 
-import android.content.Context
 import android.media.MediaCodec
-import android.os.Build
-import androidx.annotation.RequiresApi
-import com.pedro.encoder.utils.CodecUtil
-import com.pedro.rtplibrary.base.DisplayBase
-import com.pedro.rtsp.rtsp.VideoCodec
+import com.pedro.rtplibrary.base.OnlyAudioBase
 import com.pedro.rtsp.utils.ConnectCheckerRtsp
 import java.nio.ByteBuffer
 
-@RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
-open class RtspServerDisplay(context: Context, useOpengl: Boolean,
-  connectCheckerRtsp: ConnectCheckerRtsp, port: Int) : DisplayBase(context, useOpengl) {
+/**
+ * Created by pedro on 17/04/21.
+ */
+open class RtspServerOnlyAudio(connectCheckerRtsp: ConnectCheckerRtsp, port: Int) : OnlyAudioBase() {
 
-  private val rtspServer: RtspServer =
-      RtspServer(connectCheckerRtsp, port)
+  private val rtspServer = RtspServer(connectCheckerRtsp, port)
 
-  fun setVideoCodec(videoCodec: VideoCodec) {
-    videoEncoder.type =
-      if (videoCodec == VideoCodec.H265) CodecUtil.H265_MIME else CodecUtil.H264_MIME
+  init {
+    rtspServer.setOnlyAudio(true)
   }
 
   fun getNumClients(): Int = rtspServer.getNumClients()
@@ -49,17 +43,6 @@ open class RtspServerDisplay(context: Context, useOpengl: Boolean,
 
   override fun getAacDataRtp(aacBuffer: ByteBuffer, info: MediaCodec.BufferInfo) {
     rtspServer.sendAudio(aacBuffer, info)
-  }
-
-  override fun onSpsPpsVpsRtp(sps: ByteBuffer, pps: ByteBuffer, vps: ByteBuffer?) {
-    val newSps = sps.duplicate()
-    val newPps = pps.duplicate()
-    val newVps = vps?.duplicate()
-    rtspServer.setVideoInfo(newSps, newPps, newVps)
-  }
-
-  override fun getH264DataRtp(h264Buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
-    rtspServer.sendVideo(h264Buffer, info)
   }
 
   override fun setLogs(enable: Boolean) {

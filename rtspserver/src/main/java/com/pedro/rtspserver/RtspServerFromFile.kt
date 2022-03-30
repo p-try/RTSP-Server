@@ -15,7 +15,7 @@ import com.pedro.rtsp.utils.ConnectCheckerRtsp
 import java.nio.ByteBuffer
 
 @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
-class RtspServerFromFile : FromFileBase {
+open class RtspServerFromFile : FromFileBase {
 
   private val rtspServer: RtspServer
 
@@ -23,21 +23,21 @@ class RtspServerFromFile : FromFileBase {
     videoDecoderInterface: VideoDecoderInterface,
     audioDecoderInterface: AudioDecoderInterface) : super(openGlView, videoDecoderInterface,
     audioDecoderInterface) {
-    rtspServer = RtspServer(openGlView.context, connectCheckerRtsp, port)
+    rtspServer = RtspServer(connectCheckerRtsp, port)
   }
 
   constructor(lightOpenGlView: LightOpenGlView, connectCheckerRtsp: ConnectCheckerRtsp, port: Int,
     videoDecoderInterface: VideoDecoderInterface,
     audioDecoderInterface: AudioDecoderInterface) : super(lightOpenGlView, videoDecoderInterface,
     audioDecoderInterface) {
-    rtspServer = RtspServer(lightOpenGlView.context, connectCheckerRtsp, port)
+    rtspServer = RtspServer(connectCheckerRtsp, port)
   }
 
   constructor(context: Context, connectCheckerRtsp: ConnectCheckerRtsp, port: Int,
     videoDecoderInterface: VideoDecoderInterface,
     audioDecoderInterface: AudioDecoderInterface) : super(context, videoDecoderInterface,
     audioDecoderInterface) {
-    rtspServer = RtspServer(context, connectCheckerRtsp, port)
+    rtspServer = RtspServer(connectCheckerRtsp, port)
   }
 
   fun setVideoCodec(videoCodec: VideoCodec) {
@@ -45,13 +45,17 @@ class RtspServerFromFile : FromFileBase {
       if (videoCodec == VideoCodec.H265) CodecUtil.H265_MIME else CodecUtil.H264_MIME
   }
 
+  fun getNumClients(): Int = rtspServer.getNumClients()
+
   fun getEndPointConnection(): String = "rtsp://${rtspServer.serverIp}:${rtspServer.port}/"
 
-  override fun setAuthorization(user: String, password: String) { //not developed
+  override fun setAuthorization(user: String, password: String) {
+    rtspServer.setAuth(user, password)
   }
 
   fun startStream() {
     super.startStream("")
+    rtspServer.startServer()
   }
 
   override fun prepareAudioRtp(isStereo: Boolean, sampleRate: Int) {
@@ -74,12 +78,14 @@ class RtspServerFromFile : FromFileBase {
     rtspServer.setLogs(enable)
   }
 
+  override fun setCheckServerAlive(enable: Boolean) {
+  }
+
   override fun onSpsPpsVpsRtp(sps: ByteBuffer, pps: ByteBuffer, vps: ByteBuffer?) {
     val newSps = sps.duplicate()
     val newPps = pps.duplicate()
     val newVps = vps?.duplicate()
     rtspServer.setVideoInfo(newSps, newPps, newVps)
-    rtspServer.startServer()
   }
 
   override fun getH264DataRtp(h264Buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
@@ -95,10 +101,12 @@ class RtspServerFromFile : FromFileBase {
 
   override fun shouldRetry(reason: String?): Boolean = false
 
-  override fun reConnect(delay: Long) {
-  }
+  override fun hasCongestion(): Boolean = rtspServer.hasCongestion()
 
   override fun setReTries(reTries: Int) {
+  }
+
+  override fun reConnect(delay: Long, backupUrl: String?) {
   }
 
   override fun getCacheSize(): Int = 0
