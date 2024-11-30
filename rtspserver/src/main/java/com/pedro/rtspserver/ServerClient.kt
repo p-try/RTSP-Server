@@ -32,7 +32,7 @@ open class ServerClient(private val socket: Socket, serverIp: String, serverPort
     commandsManager.audioDisabled = audioDisabled
     commandsManager.isStereo = isStereo
     commandsManager.sampleRate = sampleRate
-    commandsManager.setVideoInfo(sps, pps, vps)
+    commandsManager.setVideoInfo(sps!!, pps!!, vps)
     commandsManager.setAuth(user, password)
   }
 
