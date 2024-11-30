@@ -23,7 +23,7 @@ android {
 
 dependencies {
     implementation project(':rtspserver')
-    implementation 'com.github.p-try.rtmp-rtsp-stream-client-java:rtplibrary:capturesupport-SNAPSHOT'
+    implementation 'com.github.p-try.rtmp-rtsp-stream-client-java:rtplibrary:ae4ef41'
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
     implementation 'androidx.appcompat:appcompat:1.4.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.3'
